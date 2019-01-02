@@ -20,86 +20,6 @@ char * load_string_from_file(const char * path)
 	return str;
 }
 
-// : Interpreter
-
-typedef struct Loop {
-	size_t position;
-	struct Loop * last;
-} Loop;
-
-void interpret_brainfuck(const char * program_text)
-{
-	#define DATA_SIZE 1024
-	char data[DATA_SIZE];
-	for (int i = 0; i < DATA_SIZE; i++) data[i] = 0;
-	size_t cursor = 0;
-	
-	size_t text_cursor = 0;
-	Loop * loop_stack = NULL;
-	
-	bool running = true;
-	while (running) {
-		assert(cursor >= 0);
-		assert(cursor < DATA_SIZE);
-		char c = program_text[text_cursor++];
-		switch (c) {
-		case '\0':
-			running = false;
-			break;
-		case '>':
-			cursor++;
-			break;
-		case '<':
-			cursor--;
-			break;
-		case '+':
-			data[cursor]++;
-			break;
-		case '-':
-			data[cursor]--;
-			break;
-		case '[':
-			if (data[cursor]) {
-				Loop * loop = malloc(sizeof(Loop));
-				loop->position = text_cursor;
-				loop->last = loop_stack;
-				loop_stack = loop;
-			} else {
-				// Skip ahead
-				size_t extra_scopes = 0;
-				while (true) {
-					c = program_text[text_cursor++];
-					if (c == '[') extra_scopes++;
-					if (c == ']') {
-						if (extra_scopes == 0) break;
-						extra_scopes--;
-					}
-				}
-			}
-			break;
-		case ']':
-			assert(loop_stack);
-			if (data[cursor]) {
-				text_cursor = loop_stack->position;
-			} else {
-				Loop * to_free = loop_stack;
-				loop_stack = loop_stack->last;
-				free(to_free);
-			}
-			break;
-		case '.':
-			printf("%c", data[cursor]);
-			break;
-		case ',': {
-			char input = getchar();
-			if (input != EOF) data[cursor] = input;
-		} break;
-		}
-	}
-}
-
-// :\ Interpreter
-
 // : Generate ASM
 
 typedef enum {
@@ -208,40 +128,6 @@ ASM * compile_brainfuck_to_asm(Compiler * compiler, const char * program_text)
 }
 
 // :\ Generate ASM
-
-// : Optimize ASM
-
-ASM * optimize_asm(ASM * code)
-{
-	#if 0
-	ASM * optimized = NULL;
-	// Ignore redundant examinations
-	{
-		bool need_to_examine = true;
-		for (int i = 0; i < sb_count(code); i++) {
-			switch (code[i].instruction) {
-			case INSTR_EXAMINE_CURSOR:
-				if (need_to_examine) {
-					sb_push(optimized, code[i]);
-					need_to_examine = false;
-				}
-				break;
-			case INSTR_ADVANCE_CURSOR:
-			case INSTR_RETREAT_CURSOR:
-				sb_push(optimized, code[i]);
-				need_to_examine = true;
-				break;
-			default:
-				sb_push(optimized, code[i]);
-			}
-		}
-	}
-	return optimized;
-	#endif
-	return sb_copy(code);
-}
-
-// :\ Optimize ASM
 
 // : Output ASM
 
@@ -367,18 +253,9 @@ int main(int argc, char ** argv)
 	}
 	const char * read_file_name = argv[1];
 	const char * program_text = load_string_from_file(read_file_name);
-	
-	//interpret_brainfuck(program_text);
 
 	Compiler * compiler = compiler_alloc();
 	ASM * code = compile_brainfuck_to_asm(compiler, program_text);
-
-	{
-		// Run optimizations
-		ASM * optimized = optimize_asm(code);
-		sb_free(code);
-		code = optimized;
-	}
 	
 	for (int i = 0; i < sb_count(code); i++) {
 		printf("%s\n", instruction_to_string[code[i].instruction]);
