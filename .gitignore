@@ -1,0 +1,6 @@
+tests/
+*.bf
+a.out
+bf
+*.s
+*.input
