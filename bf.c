@@ -6,20 +6,6 @@
 
 #include "stretchy_buffer.h"
 
-char * load_string_from_file(const char * path)
-{
-	FILE * file = fopen(path, "r");
-	if (file == NULL) return NULL;
-	int file_len = 0;
-	while (fgetc(file) != EOF) file_len++;
-	char * str = (char*) malloc(file_len + 1);
-	str[file_len] = '\0';
-	fseek(file, 0, SEEK_SET);
-	for (int i = 0; i < file_len; i++) str[i] = fgetc(file);
-	fclose(file);
-	return str;
-}
-
 // : Generate ASM
 
 typedef enum {
@@ -151,9 +137,8 @@ void output_asm_initialization(FILE * file, size_t memory_size)
 			"subq $2, %%r12\n"); // Nudge cursor to the start of memory
 }
 
-void output_asm_instruction(FILE * file, ASM chunk)
+void output_asm_instruction(FILE * file, ASM chunk, size_t instr_id)
 {
-	static size_t unique_id = 0; // TODO(pixlark): Kluge
 	switch (chunk.instruction) {
 	case INSTR_ADVANCE_CURSOR:
 		// Moves the cursor away from the stack
@@ -189,12 +174,11 @@ void output_asm_instruction(FILE * file, ASM chunk)
 				"addq $-1, %%rsi\n"
 				"movq $1, %%rdx\n"    // 1 char long
 				"syscall\n"
-				"cmpb $255, -1(%%rbp)\n" // If we didn't read an EOF, copy the value over to %r12
+				"cmpq $0, %%rax\n"    // If we didn't read an EOF, copy the value over to %r12
 				"jz __eof_skip_%d\n"
-				"movb -1(%%rbp), %%r8\n"
-				"movb %%r8, 0(%%r12)\n"
-				"__eof_skip_%d:\n", unique_id, unique_id);
-		unique_id++;
+				"movb -1(%%rbp), %%al\n"
+				"movb %%al, 0(%%r12)\n"
+				"__eof_skip_%d:\n", instr_id, instr_id);
 		break;
 	case INSTR_START_LOOP:
 		// Set down a label for this loop index
@@ -233,7 +217,7 @@ void output_asm_to_file(FILE * file, ASM * code)
 	output_asm_initialization(file, 30000);
 
 	for (int i = 0; i < sb_count(code); i++) {
-		output_asm_instruction(file, code[i]);
+		output_asm_instruction(file, code[i], i);
 	}
 	
 	// Write footer
@@ -245,10 +229,24 @@ void output_asm_to_file(FILE * file, ASM * code)
 
 // :\ Output ASM
 
+char * load_string_from_file(const char * path)
+{
+	FILE * file = fopen(path, "r");
+	if (file == NULL) return NULL;
+	int file_len = 0;
+	while (fgetc(file) != EOF) file_len++;
+	char * str = (char*) malloc(file_len + 1);
+	str[file_len] = '\0';
+	fseek(file, 0, SEEK_SET);
+	for (int i = 0; i < file_len; i++) str[i] = fgetc(file);
+	fclose(file);
+	return str;
+}
+
 int main(int argc, char ** argv)
 {
-	if (argc != 2) {
-		printf("Give one file to compile\n");
+	if (argc < 2 || argc > 3) {
+		printf("Usage: bf source [output]\n");
 		return 1;
 	}
 	const char * read_file_name = argv[1];
@@ -261,7 +259,8 @@ int main(int argc, char ** argv)
 		printf("%s\n", instruction_to_string[code[i].instruction]);
 	}
 
-	FILE * asm_file = fopen("output.s", "w");
+	const char * asm_file_name = argc == 3 ? argv[2] : "output.s";
+	FILE * asm_file = fopen(asm_file_name, "w");
 	output_asm_to_file(asm_file, code);
 	fclose(asm_file);
 	
